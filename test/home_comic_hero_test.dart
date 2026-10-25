@@ -8,6 +8,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_provider/cover_resize_image.dart';
 import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/pages/home_page.dart';
@@ -83,18 +84,31 @@ void main() {
         for (final history in histories) {
           HistoryManager().addHistory(history);
         }
-        // Cache decoded images so the test exercises rendering without HTTP.
+        // Cache decoded images so the test exercises rendering without HTTP:
+        // under the cover provider, which the detail page's Hero uses, and
+        // under the tile-sized variant the home tiles request (98x136 at this
+        // window width).
         for (final comic in <Comic>[...histories, ...readLater]) {
           final provider = findImageProvider(comic)!;
-          final pixels = await tester.runAsync(
-            () => createTestImage(width: 20, height: 30),
-          );
-          PaintingBinding.instance.imageCache.putIfAbsent(
+          final tileProvider = CoverResizeImage.forTile(
             provider,
-            () => OneFrameImageStreamCompleter(
-              SynchronousFuture(ImageInfo(image: pixels!)),
-            ),
+            const Size(98, 136),
+            tester.view.devicePixelRatio,
           );
+          for (final Object key in [
+            provider,
+            await tileProvider.obtainKey(ImageConfiguration.empty),
+          ]) {
+            final pixels = await tester.runAsync(
+              () => createTestImage(width: 20, height: 30),
+            );
+            PaintingBinding.instance.imageCache.putIfAbsent(
+              key,
+              () => OneFrameImageStreamCompleter(
+                SynchronousFuture(ImageInfo(image: pixels!)),
+              ),
+            );
+          }
         }
         final navigatorKey = GlobalKey<NavigatorState>();
         await tester.pumpWidget(
