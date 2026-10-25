@@ -128,6 +128,45 @@ RippleSweep? galleryRippleSweep(ReaderMode mode, {required bool forward}) {
   return forward ? sweep : sweep?.opposite;
 }
 
+/// What a reader shortcut key does, independent of the reading mode.
+enum ReaderKeyAction {
+  nextScreen,
+  previousScreen,
+  firstPage,
+  lastPage,
+  previousChapter,
+  nextChapter,
+}
+
+/// Maps a key to the reader shortcut it triggers, or null. PageUp/PageDown
+/// and Space are what most Bluetooth page turners send, so they also keep
+/// working while held ([repeat]); the jump keys act on the first press only.
+@visibleForTesting
+ReaderKeyAction? readerKeyAction(
+  LogicalKeyboardKey key, {
+  required bool shift,
+  required bool repeat,
+}) {
+  if (key == LogicalKeyboardKey.pageDown ||
+      (key == LogicalKeyboardKey.space && !shift)) {
+    return ReaderKeyAction.nextScreen;
+  }
+  if (key == LogicalKeyboardKey.pageUp ||
+      (key == LogicalKeyboardKey.space && shift)) {
+    return ReaderKeyAction.previousScreen;
+  }
+  if (repeat) return null;
+  if (key == LogicalKeyboardKey.home) return ReaderKeyAction.firstPage;
+  if (key == LogicalKeyboardKey.end) return ReaderKeyAction.lastPage;
+  if (key == LogicalKeyboardKey.bracketLeft) {
+    return ReaderKeyAction.previousChapter;
+  }
+  if (key == LogicalKeyboardKey.bracketRight) {
+    return ReaderKeyAction.nextChapter;
+  }
+  return null;
+}
+
 extension _ReaderContext on BuildContext {
   _ReaderState get reader => findAncestorStateOfType<_ReaderState>()!;
 
@@ -537,10 +576,14 @@ class _ReaderState extends State<Reader>
   @override
   Widget build(BuildContext context) {
     _checkImagesPerPageChange();
-    return KeyboardListener(
+    return Focus(
       focusNode: focusNode,
       autofocus: true,
-      onKeyEvent: onKeyEvent,
+      includeSemantics: false,
+      // The shared shortcuts report themselves handled, so PageUp/PageDown
+      // don't also reach the app-wide scroll shortcuts.
+      onKeyEvent: (node, event) =>
+          onKeyEvent(event) ? KeyEventResult.handled : KeyEventResult.ignored,
       child: Overlay(
         initialEntries: [
           OverlayEntry(
@@ -564,11 +607,78 @@ class _ReaderState extends State<Reader>
     );
   }
 
-  void onKeyEvent(KeyEvent event) {
-    if (event.logicalKey == LogicalKeyboardKey.f12 && event is KeyUpEvent) {
+  /// Returns true if the event was consumed by a shared shortcut.
+  bool onKeyEvent(KeyEvent event) {
+    // F11 is the usual fullscreen key on Windows; F12 is kept for habit.
+    if ((event.logicalKey == LogicalKeyboardKey.f11 ||
+            event.logicalKey == LogicalKeyboardKey.f12) &&
+        event is KeyUpEvent) {
       fullscreen();
     }
+    // Keys typed into a text field (the embedded chapter comments) bubble up
+    // here unhandled; a space there must not turn the page. Key-ups still go
+    // through so held modifiers are released.
+    if (event is! KeyUpEvent && _isTyping) {
+      return false;
+    }
+    if (_handleShortcut(event)) {
+      return true;
+    }
     _imageViewController?.handleKeyEvent(event);
+    return false;
+  }
+
+  bool get _isTyping {
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused == null) return false;
+    return focused.widget is EditableText ||
+        focused.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  /// Keys shared by every reading mode: PageUp/PageDown and Space on desktop
+  /// keyboards, which are also what most Bluetooth page turners send on
+  /// Android. Arrow keys stay with the mode's own controller. Returns true if
+  /// the event was consumed.
+  bool _handleShortcut(KeyEvent event) {
+    if (event is KeyUpEvent) return false;
+    final repeat = event is KeyRepeatEvent;
+    final action = readerKeyAction(
+      event.logicalKey,
+      shift: HardwareKeyboard.instance.isShiftPressed,
+      repeat: repeat,
+    );
+    // A held key keeps turning pages but stops at the chapter's edge.
+    switch (action) {
+      case ReaderKeyAction.nextScreen:
+        _turnScreen(true, crossChapter: !repeat);
+      case ReaderKeyAction.previousScreen:
+        _turnScreen(false, crossChapter: !repeat);
+      case ReaderKeyAction.firstPage:
+        toPage(1);
+      case ReaderKeyAction.lastPage:
+        toPage(maxPage);
+      case ReaderKeyAction.previousChapter:
+        toPrevChapter();
+      case ReaderKeyAction.nextChapter:
+        toNextChapter();
+      case null:
+        return false;
+    }
+    return true;
+  }
+
+  /// Gallery modes turn one page; continuous modes scroll by most of a screen
+  /// and only turn the chapter once the scroll can go no further.
+  void _turnScreen(bool forward, {required bool crossChapter}) {
+    if (mode.isContinuous &&
+        _imageViewController?.scrollByScreen(forward) == true) {
+      return;
+    }
+    if (forward) {
+      turnForward(crossChapter: crossChapter);
+    } else {
+      turnBackward(crossChapter: crossChapter);
+    }
   }
 
   @override
@@ -688,12 +798,14 @@ class _ReaderState extends State<Reader>
     return g;
   }
 
+  @override
   bool get isFirstChapterOfGroup {
     final previous = visibleChapterFrom(chapter, -1);
     return previous == null ||
         groupIndexOfChapter(previous) != groupIndexOfChapter(chapter);
   }
 
+  @override
   bool get isLastChapterOfGroup {
     final next = visibleChapterFrom(chapter, 1);
     return next == null ||
@@ -869,26 +981,18 @@ abstract mixin class _ImagePerPageHandler {
 }
 
 abstract mixin class _VolumeListener {
-  bool toNextPage();
+  bool turnForward({bool crossChapter = true});
 
-  bool toPrevPage();
-
-  bool toNextChapter();
-
-  bool toPrevChapter({bool toLastPage = false});
+  bool turnBackward({bool crossChapter = true});
 
   VolumeListener? volumeListener;
 
   void onDown() {
-    if (!toNextPage()) {
-      toNextChapter();
-    }
+    turnForward();
   }
 
   void onUp() {
-    if (!toPrevPage()) {
-      toPrevChapter(toLastPage: true);
-    }
+    turnBackward();
   }
 
   void handleVolumeEvent() {
@@ -948,6 +1052,10 @@ abstract mixin class _ReaderLocation {
   /// 0-based group holding the 1-based flat chapter [c].
   int groupIndexOfChapter(int c);
 
+  bool get isFirstChapterOfGroup;
+
+  bool get isLastChapterOfGroup;
+
   bool get isLoading;
 
   String get cid;
@@ -996,6 +1104,24 @@ abstract mixin class _ReaderLocation {
       return true;
     }
     return toPage(page - 1);
+  }
+
+  /// One step forward for every page-turn input — tap zones, keys, the mouse
+  /// wheel, volume keys and auto page turning: the next page, or past the
+  /// chapter's last page the next chapter of the same group. With
+  /// [crossChapter] false it stays inside the chapter.
+  bool turnForward({bool crossChapter = true}) {
+    if (toNextPage()) return true;
+    if (!crossChapter || isLastChapterOfGroup) return false;
+    return toNextChapter();
+  }
+
+  /// The mirror of [turnForward]; a chapter change lands on the previous
+  /// chapter's last page.
+  bool turnBackward({bool crossChapter = true}) {
+    if (toPrevPage()) return true;
+    if (!crossChapter || isFirstChapterOfGroup) return false;
+    return toPrevChapter(toLastPage: true);
   }
 
   int _animationCount = 0;
@@ -1418,6 +1544,11 @@ abstract interface class _ImageViewController {
 
   /// Starts or stops scrolling to match [_AutoPageTurner.autoScrollRunning].
   void syncAutoScroll();
+
+  /// Continuous mode: scroll most of a viewport toward [forward]. Returns
+  /// false when the scroll is already at that end (or in gallery mode), so the
+  /// caller turns the page or chapter instead.
+  bool scrollByScreen(bool forward);
 
   void handleDoubleTap(Offset location);
 

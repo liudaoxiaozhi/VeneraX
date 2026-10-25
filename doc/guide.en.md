@@ -370,3 +370,12 @@ Comic detail page:
 - Long-press the title or a tag: copy the text.
 - Long-press a chapter: enter chapter multi-select for bulk mark-as-read, download or re-translate.
 - Long-press a chapter tab (collections only): rename, reorder or remove that member.
+
+Reader (keyboard and Bluetooth page turners):
+
+- PageDown / Space: next screen; PageUp / Shift+Space: previous screen. Gallery modes turn one page, continuous modes scroll about one screen; past the chapter's end they move to the next chapter (never across groups), and a held key stops at the chapter edge.
+- Arrow keys: turn pages in the reading direction (small scroll steps in continuous modes); gallery modes also change chapter at the first or last page.
+- Home / End: first / last page of the chapter.
+- [ / ]: previous / next chapter.
+- F11 (or F12): toggle fullscreen (desktop).
+- Bluetooth page turners on Android usually send PageUp/PageDown, Space or arrow keys and work the same way; volume-key page turning is a reader setting.

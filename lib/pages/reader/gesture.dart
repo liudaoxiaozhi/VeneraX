@@ -194,15 +194,9 @@ class _ReaderGestureDetectorState
     }
     if (context.reader.mode.key.startsWith('gallery')) {
       if (forward) {
-        if (!context.reader.toNextPage() &&
-            !context.reader.isLastChapterOfGroup) {
-          context.reader.toNextChapter();
-        }
+        context.reader.turnForward();
       } else {
-        if (!context.reader.toPrevPage() &&
-            !context.reader.isFirstChapterOfGroup) {
-          context.reader.toPrevChapter(toLastPage: true);
-        }
+        context.reader.turnBackward();
       }
     }
   }
@@ -293,8 +287,10 @@ class _ReaderGestureDetectorState
           isBottom = true;
         }
         bool isCenter = false;
-        var prev = () => context.reader.toPrevPage();
-        var next = () => context.reader.toNextPage();
+        // At a chapter's edge these continue into the adjacent chapter, the
+        // same as the mouse wheel and volume keys.
+        var prev = () => context.reader.turnBackward();
+        var next = () => context.reader.turnForward();
         final customZones = appdata.settings.getReaderSetting(
           reader.cid,
           reader.type.sourceKey,
@@ -335,8 +331,8 @@ class _ReaderGestureDetectorState
             reader.type.sourceKey,
             'reverseTapToTurnPages',
           )) {
-            prev = () => context.reader.toNextPage();
-            next = () => context.reader.toPrevPage();
+            prev = () => context.reader.turnForward();
+            next = () => context.reader.turnBackward();
           }
           switch (context.reader.mode) {
             case ReaderMode.galleryLeftToRight:

@@ -645,6 +645,9 @@ class _GalleryModeState extends State<_GalleryMode>
   void syncAutoScroll() {} // gallery always turns pages on the reader's countdown
 
   @override
+  bool scrollByScreen(bool forward) => false;
+
+  @override
   bool get isImageZoomed {
     // 每页各自一个 PhotoViewController，取当前页的判断缩放；评论页等无控制器视为未缩放。
     final controller = photoViewControllers[reader.page];
@@ -734,9 +737,9 @@ class _GalleryModeState extends State<_GalleryMode>
         keyRepeatTimer = null;
       }
       if (forward == true) {
-        reader.toPage(reader.page + 1);
+        reader.turnForward();
       } else if (forward == false) {
-        reader.toPage(reader.page - 1);
+        reader.turnBackward();
       }
     }
     if (event is KeyRepeatEvent && keyRepeatTimer == null) {
@@ -2511,6 +2514,25 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final animate = reader.enablePageAnimation(reader.cid, reader.type);
     _futurePosition = null;
     _goToEntry(chapter, targetPage, animate: animate);
+    return true;
+  }
+
+  @override
+  bool scrollByScreen(bool forward) {
+    if (!_scrollController.hasClients) return false;
+    final pos = _scrollController.position;
+    final atEnd = forward
+        ? pos.pixels >= pos.maxScrollExtent - 1
+        : pos.pixels <= pos.minScrollExtent + 1;
+    if (atEnd) return false;
+    _cancelProgrammaticPageTurn();
+    _futurePosition = null;
+    // Keep a strip of the previous screen in view so the eye can follow.
+    final step = pos.viewportDimension * 0.9;
+    _applyScroll(
+      pos.pixels + (forward ? step : -step),
+      animate: reader.enablePageAnimation(reader.cid, reader.type),
+    );
     return true;
   }
 
