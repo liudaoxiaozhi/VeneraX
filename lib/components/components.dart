@@ -64,3 +64,4 @@ part 'source_migration.dart';
 part 'effects.dart';
 part 'gesture.dart';
 part 'code.dart';
+part 'deferred_refresh.dart';

@@ -132,7 +132,7 @@ class ComicPage extends StatefulWidget {
 }
 
 class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
-    with _ComicPageActions {
+    with _ComicPageActions, DeferredRefreshMixin<ComicPage> {
   @override
   History? history;
 
@@ -279,10 +279,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void initState() {
     scrollController.addListener(onScroll);
     ComicCollectionStore.changes.addListener(_onCollectionChanged);
-    PreTranslationTaskManager.instance.addListener(update);
+    PreTranslationTaskManager.instance.addListener(_onTranslationChanged);
     // The per-comic translation toggle lives in the service; listen so the
     // pre-translate button appears/disappears the moment it changes.
-    ImageTranslationService.instance.addListener(update);
+    ImageTranslationService.instance.addListener(_onTranslationChanged);
     super.initState();
   }
 
@@ -290,10 +290,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void dispose() {
     scrollController.removeListener(onScroll);
     ComicCollectionStore.changes.removeListener(_onCollectionChanged);
-    PreTranslationTaskManager.instance.removeListener(update);
-    ImageTranslationService.instance.removeListener(update);
+    PreTranslationTaskManager.instance.removeListener(_onTranslationChanged);
+    ImageTranslationService.instance.removeListener(_onTranslationChanged);
     super.dispose();
   }
+
+  /// The service notifies once per translated page; while the reader covers
+  /// this page those would each rebuild it for nothing.
+  void _onTranslationChanged() => refreshWhenVisible(update);
 
   @override
   void update() {

@@ -27,10 +27,12 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage>
-    with SelectionMixin<HistoryPage, History> {
+    with
+        SelectionMixin<HistoryPage, History>,
+        DeferredRefreshMixin<HistoryPage> {
   @override
   void initState() {
-    HistoryManager().addListener(onUpdate);
+    HistoryManager().addListener(_onHistoryChanged);
     if (HistoryManager().length < _asyncHistoryLimit) {
       // Small dataset: load synchronously now. It's cheap, doesn't jank the
       // transition, and avoids a one-frame loading flash.
@@ -45,7 +47,7 @@ class _HistoryPageState extends State<HistoryPage>
 
   @override
   void dispose() {
-    HistoryManager().removeListener(onUpdate);
+    HistoryManager().removeListener(_onHistoryChanged);
     searchTextController.dispose();
     super.dispose();
   }
@@ -73,6 +75,10 @@ class _HistoryPageState extends State<HistoryPage>
       });
     }
   }
+
+  /// The whole history is read again on each refresh, so a reader opened from
+  /// this page must not trigger one per saved page.
+  void _onHistoryChanged() => refreshWhenVisible(onUpdate);
 
   void onUpdate() {
     setState(() {

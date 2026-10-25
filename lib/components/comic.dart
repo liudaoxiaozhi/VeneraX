@@ -1831,7 +1831,8 @@ class SliverGridComics extends StatefulWidget {
   State<SliverGridComics> createState() => _SliverGridComicsState();
 }
 
-class _SliverGridComicsState extends State<SliverGridComics> {
+class _SliverGridComicsState extends State<SliverGridComics>
+    with DeferredRefreshMixin<SliverGridComics> {
   List<Comic> comics = [];
   List<int> heroIDs = [];
 
@@ -1866,19 +1867,21 @@ class _SliverGridComicsState extends State<SliverGridComics> {
       }
     }
     generateHeroID();
-    HistoryManager().addListener(update);
-    LocalFavoritesManager().addListener(update);
-    ReadLaterManager().addListener(update);
+    HistoryManager().addListener(_onDataChanged);
+    LocalFavoritesManager().addListener(_onDataChanged);
+    ReadLaterManager().addListener(_onDataChanged);
     super.initState();
   }
 
   @override
   void dispose() {
-    HistoryManager().removeListener(update);
-    LocalFavoritesManager().removeListener(update);
-    ReadLaterManager().removeListener(update);
+    HistoryManager().removeListener(_onDataChanged);
+    LocalFavoritesManager().removeListener(_onDataChanged);
+    ReadLaterManager().removeListener(_onDataChanged);
     super.dispose();
   }
+
+  void _onDataChanged() => refreshWhenVisible(update);
 
   void update() {
     setState(() {

@@ -645,9 +645,12 @@ class _History extends StatefulWidget {
   State<_History> createState() => _HistoryState();
 }
 
-class _HistoryState extends State<_History> {
+class _HistoryState extends State<_History>
+    with DeferredRefreshMixin<_History> {
   late List<History> history;
   late int count;
+
+  void _onHistoryChanged() => refreshWhenVisible(onHistoryChange);
 
   void onHistoryChange() {
     if (!HistoryManager().isInitialized) return;
@@ -663,15 +666,15 @@ class _HistoryState extends State<_History> {
   void initState() {
     history = HistoryManager().getRecent();
     count = HistoryManager().count();
-    HistoryManager().addListener(onHistoryChange);
-    DataSync().addListener(onHistoryChange);
+    HistoryManager().addListener(_onHistoryChanged);
+    DataSync().addListener(_onHistoryChanged);
     super.initState();
   }
 
   @override
   void dispose() {
-    HistoryManager().removeListener(onHistoryChange);
-    DataSync().removeListener(onHistoryChange);
+    HistoryManager().removeListener(_onHistoryChanged);
+    DataSync().removeListener(_onHistoryChanged);
     super.dispose();
   }
 
