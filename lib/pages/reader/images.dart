@@ -26,7 +26,10 @@ class _ReaderImagesState extends State<_ReaderImages> {
   @override
   void dispose() {
     super.dispose();
-    ImageDownloader.cancelAllLoadingImages();
+    // A chapter switch remounts this widget after reader.chapter has moved
+    // on, so the new chapter's prefetched images keep loading. Leaving the
+    // reader cancels the rest in _ReaderState.dispose.
+    ImageDownloader.cancelLoadingImagesExcept(reader.cid, reader.eid);
   }
 
   /// Handle jumping to last page when _jumpToLastPageOnLoad is true
@@ -76,10 +79,18 @@ class _ReaderImagesState extends State<_ReaderImages> {
         var cp = reader.widget.chapters?.ids.elementAtOrNull(
           reader.chapter - 1,
         );
-        var res = await reader
-            .type
-            .comicSource!
-            .loadComicPages!(reader.widget.cid, cp)
+        var res = await ChapterPagesCache.instance
+            .load(
+              ChapterPagesCache.keyOf(
+                reader.type.sourceKey,
+                reader.widget.cid,
+                cp,
+              ),
+              () => reader.type.comicSource!.loadComicPages!(
+                reader.widget.cid,
+                cp,
+              ),
+            )
             .timeout(
               _readerPageLoadTimeout,
               onTimeout: () => const Res.error("Network error"),
@@ -268,11 +279,59 @@ class _GalleryModeState extends State<_GalleryMode>
   void _schedulePrecache(int page) {
     _precacheTimer?.cancel();
     _precacheTimer = Timer(const Duration(milliseconds: 200), () {
-      if (!mounted || reader.page != page || isChapterCommentsPage(page)) {
+      if (!mounted || reader.page != page) {
         return;
       }
-      cache(page);
+      if (!isChapterCommentsPage(page)) {
+        cache(page);
+      }
+      _prefetchNextChapter(page);
     });
+  }
+
+  /// Next chapter whose start was already prefetched.
+  int? _prefetchedNextChapter;
+
+  /// On the chapter's last two pages, loads the next chapter's page list and
+  /// downloads its first images, so turning into it shows pages instead of a
+  /// spinner. Continuous mode loads neighbouring chapters on its own.
+  void _prefetchNextChapter(int page) {
+    if (page < totalImagePages - 1 || reader.isLastChapterOfGroup) return;
+    final next = reader.visibleChapterFrom(reader.chapter, 1);
+    if (next == null || next == _prefetchedNextChapter) return;
+    _prefetchedNextChapter = next;
+    final source = reader.type.comicSource;
+    final loadComicPages = source?.loadComicPages;
+    final cid = reader.cid;
+    final eid = reader.widget.chapters?.ids.elementAtOrNull(next - 1);
+    if (source == null ||
+        loadComicPages == null ||
+        eid == null ||
+        reader.type == ComicType.local ||
+        LocalManager().isDownloaded(
+          cid,
+          reader.type,
+          next,
+          reader.widget.chapters,
+        )) {
+      return;
+    }
+    final count = preCacheCount.clamp(1, 3);
+    ChapterPagesCache.instance
+        .load(
+          ChapterPagesCache.keyOf(reader.type.sourceKey, cid, eid),
+          () => loadComicPages(cid, eid),
+        )
+        .then((res) {
+          if (!reader.mounted || res.error) return;
+          for (final imageKey in res.data.take(count)) {
+            if (imageKey.startsWith('file://')) continue;
+            ImageDownloader.prefetchComicImage(imageKey, source.key, cid, eid);
+          }
+        })
+        .catchError((Object e) {
+          Log.error('Reader', 'Failed to prefetch the next chapter: $e');
+        });
   }
 
   void _increaseFingers() {
@@ -1234,9 +1293,12 @@ class _ContinuousModeState extends State<_ContinuousMode>
       return LocalManager().getImages(reader.cid, reader.type, chapter);
     }
     final chapterId = reader.widget.chapters?.ids.elementAtOrNull(chapter - 1);
-    final res = await reader.type.comicSource!.loadComicPages!(
-      reader.widget.cid,
-      chapterId,
+    final res = await ChapterPagesCache.instance.load(
+      ChapterPagesCache.keyOf(reader.type.sourceKey, reader.widget.cid, chapterId),
+      () => reader.type.comicSource!.loadComicPages!(
+        reader.widget.cid,
+        chapterId,
+      ),
     );
     if (res.error) {
       throw res.errorMessage ?? 'Failed to load next chapter';

@@ -155,12 +155,28 @@ abstract class ImageDownloader {
   static final _loadingImages =
       <String, _StreamWrapper<ImageDownloadProgress>>{};
 
+  /// The (cid, eid) chapter each entry of [_loadingImages] belongs to.
+  static final _loadingImageChapters = <String, (String, String)>{};
+
   /// Cancel all loading images.
   static void cancelAllLoadingImages() {
     for (var wrapper in _loadingImages.values) {
       wrapper.cancel();
     }
     _loadingImages.clear();
+    _loadingImageChapters.clear();
+  }
+
+  /// Cancels every loading image except those of chapter [eid] of comic
+  /// [cid], so switching chapters keeps the new chapter's prefetches going.
+  static void cancelLoadingImagesExcept(String cid, String eid) {
+    final keys = _loadingImages.keys
+        .where((key) => _loadingImageChapters[key] != (cid, eid))
+        .toList();
+    for (final key in keys) {
+      _loadingImages.remove(key)?.cancel();
+      _loadingImageChapters.remove(key);
+    }
   }
 
   /// Load a comic image from the network or cache.
@@ -179,11 +195,17 @@ abstract class ImageDownloader {
     final stream = _StreamWrapper<ImageDownloadProgress>(
       _loadComicImage(imageKey, sourceKey, cid, eid, false, onRateLimited),
       (wrapper) {
-        _loadingImages.remove(cacheKey);
+        // A cancelled wrapper finishes later; by then a new load of the same
+        // image may own the key.
+        if (identical(_loadingImages[cacheKey], wrapper)) {
+          _loadingImages.remove(cacheKey);
+          _loadingImageChapters.remove(cacheKey);
+        }
       },
       isReplayable: (progress) => progress.imageBytes != null,
     );
     _loadingImages[cacheKey] = stream;
+    _loadingImageChapters[cacheKey] = (cid, eid);
     return stream.stream;
   }
 

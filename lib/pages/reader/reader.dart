@@ -22,6 +22,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/auto_page_turning.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/chapter_duplicates.dart';
+import 'package:venera/foundation/chapter_pages_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -476,6 +477,9 @@ class _ReaderState extends State<Reader>
     }
     _disposeAutoPageTurning();
     _einkRefresher.dispose();
+    // _ReaderImages, disposed first, keeps the current chapter's downloads;
+    // leaving the reader ends those too.
+    ImageDownloader.cancelAllLoadingImages();
     focusNode.dispose();
     ImageTranslationService.instance.removeListener(_onPageTranslated);
     ImageTranslationService.instance.clearQueue();
