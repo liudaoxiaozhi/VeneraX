@@ -579,11 +579,18 @@ class ComicTile extends StatelessWidget {
     if (image == null) {
       return const SizedBox();
     }
-    return AnimatedImage(
-      image: image,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
+    // Decode at the tile's size rather than the cover's.
+    return LayoutBuilder(
+      builder: (context, constraints) => AnimatedImage(
+        image: CoverResizeImage.forTile(
+          image,
+          constraints.biggest,
+          MediaQuery.devicePixelRatioOf(context),
+        ),
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      ),
     );
   }
 
@@ -3100,11 +3107,16 @@ class SimpleComicTile extends StatelessWidget {
 
   final double height;
 
-  Widget _buildCover() {
+  Widget _buildCover(BuildContext context) {
     var image = findImageProvider(comic);
     if (image == null) return const SizedBox();
     return AnimatedImage(
-      image: image,
+      // Decode at the tile's size rather than the cover's.
+      image: CoverResizeImage.forTile(
+        image,
+        Size(width, height),
+        MediaQuery.devicePixelRatioOf(context),
+      ),
       width: double.infinity,
       height: double.infinity,
       fit: BoxFit.cover,
@@ -3114,13 +3126,13 @@ class SimpleComicTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget cover = _buildCover();
+    Widget cover = _buildCover(context);
     // A collection's cover arrives asynchronously the first time its members
     // load, so this tile has to rebuild when the store fills it in.
     if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey)) {
       cover = ListenableBuilder(
         listenable: ComicCollectionStore.changes,
-        builder: (context, _) => _buildCover(),
+        builder: (context, _) => _buildCover(context),
       );
     }
 

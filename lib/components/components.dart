@@ -25,6 +25,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/foundation/image_provider/cover_resize_image.dart';
 import 'package:venera/foundation/image_provider/history_image_provider.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
 import 'package:venera/foundation/local.dart';
