@@ -218,10 +218,15 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
-      // A download reuses an already-cached image instead of re-fetching it,
-      // and never re-caches (avoids double-writing the bytes to disk and
-      // evicting the reader's prefetch cache) — see #4 / #17.
-      if (forDownload) return;
+      // A cache hit ends the load for every caller. Going on to the network
+      // here re-fetched each cached page in the background: the reader's
+      // shared stream keeps listening after its consumer has the bytes, so the
+      // request ran (and rewrote the cache) on every view and every prefetch,
+      // outside the pre-translation rate limiter too. Bad bytes don't need it:
+      // a decode failure evicts them and the next load fetches again. A
+      // download likewise reuses the cached image without re-caching it, see
+      // #4 / #17.
+      return;
     }
 
     Future<Map<String, dynamic>?> Function()? onLoadFailed;

@@ -12,6 +12,7 @@ void main() {
 
   late Directory root;
   const sourceKey = 'stream_diagnostic_source';
+  var loadingConfigCalls = 0;
 
   ComicSource buildSource() {
     return ComicSource(
@@ -27,10 +28,13 @@ void main() {
       null,
       null,
       null,
-      (image, cid, eid) => Future<Map<String, dynamic>>.delayed(
-        const Duration(days: 1),
-        () => <String, dynamic>{},
-      ),
+      (image, cid, eid) {
+        loadingConfigCalls++;
+        return Future<Map<String, dynamic>>.delayed(
+          const Duration(days: 1),
+          () => <String, dynamic>{},
+        );
+      },
       null,
       'stream_diagnostic.js',
       '',
@@ -59,6 +63,7 @@ void main() {
     App.dataPath = root.path;
     App.cachePath = root.path;
     CacheManager.instance = null;
+    loadingConfigCalls = 0;
     ComicSourceManager().add(buildSource());
   });
 
@@ -97,5 +102,21 @@ void main() {
             .timeout(const Duration(seconds: 1));
 
     expect(progress.imageBytes, [9, 8, 7]);
+  });
+
+  test('a cache hit does not go on to fetch the image again', () async {
+    const imageKey = 'cached-image';
+    await CacheManager().writeCache('$imageKey@$sourceKey@cid@eid', [4, 5, 6]);
+
+    final events = await ImageDownloader.loadComicImage(
+      imageKey,
+      sourceKey,
+      'cid',
+      'eid',
+    ).toList().timeout(const Duration(seconds: 1));
+
+    expect(events.last.imageBytes, [4, 5, 6]);
+    // Reaching the loading config means the network path ran after the hit.
+    expect(loadingConfigCalls, 0);
   });
 }
