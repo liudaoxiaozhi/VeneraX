@@ -348,13 +348,20 @@ class _GalleryModeState extends State<_GalleryMode>
     }
   }
 
+  /// Images (1-based) already handed to [_preDownloadImage] in this chapter.
+  /// Every settled page walks the whole look-ahead window again, so without
+  /// this each image was requested once per page turn that covered it.
+  final _requestedDownloads = <int>{};
+
   void _cachePage(int page, bool shouldPreCache) {
     if (isChapterCommentsPage(page)) return;
     var (startIndex, endIndex) = getPageImagesRange(page);
     for (int i = startIndex; i < endIndex; i++) {
-      shouldPreCache
-          ? _precacheImage(i + 1, context)
-          : _preDownloadImage(i + 1, context);
+      if (shouldPreCache) {
+        _precacheImage(i + 1, context);
+      } else if (_requestedDownloads.add(i + 1)) {
+        _preDownloadImage(i + 1, context);
+      }
     }
   }
 
@@ -2801,7 +2808,7 @@ void _preDownloadImage(int page, BuildContext context) {
   var cid = reader.cid;
   var eid = reader.eid;
   var sourceKey = reader.type.comicSource?.key;
-  ImageDownloader.loadComicImage(imageKey, sourceKey, cid, eid);
+  ImageDownloader.prefetchComicImage(imageKey, sourceKey, cid, eid);
 }
 
 void _preDownloadImageEntry(
@@ -2815,7 +2822,7 @@ void _preDownloadImageEntry(
   final reader = context.reader;
   final eid =
       reader.widget.chapters?.ids.elementAtOrNull(entry.chapter - 1) ?? '0';
-  ImageDownloader.loadComicImage(
+  ImageDownloader.prefetchComicImage(
     imageKey,
     reader.type.comicSource?.key,
     reader.cid,

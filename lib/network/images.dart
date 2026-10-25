@@ -187,6 +187,35 @@ abstract class ImageDownloader {
     return stream.stream;
   }
 
+  /// Starts downloading a comic image into the disk cache unless it is already
+  /// cached or on its way. Unlike [loadComicImage], a cache hit reads nothing:
+  /// prefetching only needs the file to exist, not its bytes in memory.
+  static Future<void> prefetchComicImage(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid,
+  ) async {
+    if (_loadingImages.containsKey(
+      imageCacheKey(imageKey, sourceKey, cid, eid),
+    )) {
+      return;
+    }
+    // The same key [_loadComicImage] reads and writes.
+    final cached = await CacheManager().findCache(
+      imageCacheKey(
+        AvifFallbackRegistry.instance.applyFallback(imageKey),
+        sourceKey,
+        cid,
+        eid,
+      ),
+    );
+    if (cached != null) {
+      return;
+    }
+    loadComicImage(imageKey, sourceKey, cid, eid);
+  }
+
   static Stream<ImageDownloadProgress> loadComicImageUnwrapped(
     String imageKey,
     String? sourceKey,
