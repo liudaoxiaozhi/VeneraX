@@ -55,6 +55,74 @@ void main() {
     }));
   });
 
+  testWidgets('a freed slot goes to the queued read without a delay', (
+    tester,
+  ) async {
+    final reads = <Completer<Uint8List>>[];
+    final events = StreamController<ImageChunkEvent>.broadcast();
+    addTearDown(events.close);
+    await IOOverrides.runZoned(() async {
+      final loads = List.generate(
+        9,
+        (i) => CachedImageProvider('file://cover-$i').load(events, () {}),
+      );
+      await tester.pump();
+      reads.first.complete(Uint8List.fromList([1]));
+      // No time passes: the slot is handed over, not found by polling.
+      await tester.pump();
+      expect(reads.length, 9);
+      for (final read in reads.skip(1)) {
+        read.complete(Uint8List.fromList([1]));
+      }
+      await tester.pump();
+      await Future.wait(loads);
+    }, createFile: (_) => _ImageFile(() {
+      final read = Completer<Uint8List>();
+      reads.add(read);
+      return read.future;
+    }));
+  });
+
+  testWidgets('a load cancelled while queued passes its slot on', (
+    tester,
+  ) async {
+    final reads = <Completer<Uint8List>>[];
+    final events = StreamController<ImageChunkEvent>.broadcast();
+    addTearDown(events.close);
+    final stopped = StateError('stopped');
+    var stopQueued = false;
+    await IOOverrides.runZoned(() async {
+      final loads = List.generate(
+        8,
+        (i) => CachedImageProvider('file://cover-$i').load(events, () {}),
+      );
+      final cancelled = expectLater(
+        CachedImageProvider('file://cancelled').load(events, () {
+          if (stopQueued) throw stopped;
+        }),
+        throwsA(same(stopped)),
+      );
+      final next = CachedImageProvider('file://next').load(events, () {});
+      await tester.pump();
+      expect(reads.length, 8);
+      stopQueued = true;
+      reads.first.complete(Uint8List.fromList([1]));
+      await tester.pump();
+      await cancelled;
+      // The cancelled load never read; the one behind it got the slot.
+      expect(reads.length, 9);
+      for (final read in reads.skip(1)) {
+        read.complete(Uint8List.fromList([1]));
+      }
+      await tester.pump();
+      await Future.wait([...loads, next]);
+    }, createFile: (_) => _ImageFile(() {
+      final read = Completer<Uint8List>();
+      reads.add(read);
+      return read.future;
+    }));
+  });
+
   test('a cancelled load does not start reading or acquire a slot', () async {
     var reads = 0;
     final events = StreamController<ImageChunkEvent>.broadcast();

@@ -1,4 +1,5 @@
-import 'dart:async' show Future;
+import 'dart:async' show Completer, Future;
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -31,18 +32,46 @@ class CachedImageProvider
   // Use local cover if network image fails to load.
   final bool fallbackToLocalCover;
 
+  /// Slots in use, including ones already handed to a queued load.
   static int loadingCount = 0;
 
   static const _kMaxLoadingCount = 8;
 
+  /// Loads waiting for a slot, oldest first.
+  static final _waiting = Queue<Completer<void>>();
+
+  /// Takes a slot, waiting in line if all are busy. A freed slot goes straight
+  /// to the next load in line: polling for one every 100ms used to bring even
+  /// disk-cached covers in eight at a time, with a pause between batches.
+  static Future<void> _acquireSlot(void Function() checkStop) async {
+    if (loadingCount < _kMaxLoadingCount) {
+      loadingCount++;
+      return;
+    }
+    final turn = Completer<void>();
+    _waiting.add(turn);
+    await turn.future;
+    try {
+      // The tile may have scrolled away while this load waited.
+      checkStop();
+    } catch (_) {
+      _releaseSlot();
+      rethrow;
+    }
+  }
+
+  static void _releaseSlot() {
+    if (_waiting.isNotEmpty) {
+      _waiting.removeFirst().complete();
+    } else {
+      loadingCount--;
+    }
+  }
+
   @override
   Future<Uint8List> load(chunkEvents, checkStop) async {
     checkStop();
-    while(loadingCount >= _kMaxLoadingCount) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      checkStop();
-    }
-    loadingCount++;
+    await _acquireSlot(checkStop);
     try {
       if(url.startsWith("file://")) {
         var file = File(url.substring(7));
@@ -83,7 +112,7 @@ class CachedImageProvider
       rethrow;
     }
     finally {
-      loadingCount--;
+      _releaseSlot();
     }
   }
 
