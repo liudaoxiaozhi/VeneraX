@@ -1521,6 +1521,7 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
   late Battery _battery;
   late int _batteryLevel = 100;
   Timer? _timer;
+  StreamSubscription<BatteryState>? _stateSubscription;
   bool _hasBattery = false;
   BatteryState state = BatteryState.unknown;
 
@@ -1541,16 +1542,27 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
         setState(() {
           _hasBattery = true;
         });
-        _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          _battery.batteryLevel.then((level) {
+        // The level moves about a percent every few minutes, so a slow poll
+        // is enough; plugging in or out arrives as a state event and also
+        // refreshes the level, which keeps the charging icon current.
+        _timer = Timer.periodic(
+          const Duration(minutes: 1),
+          (_) => _refreshLevel(),
+        );
+        _stateSubscription = _battery.onBatteryStateChanged.listen(
+          (value) {
             if (!mounted) return;
-            if (_batteryLevel != level) {
+            if (state != value) {
               setState(() {
-                _batteryLevel = level;
+                state = value;
               });
             }
-          });
-        });
+            _refreshLevel();
+          },
+          onError: (_) {
+            // Not every platform reports state changes; the poll still runs.
+          },
+        );
       }
     } catch (_) {
       // ignore
@@ -1565,9 +1577,25 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
     return _batteryInfo(_batteryLevel);
   }
 
+  void _refreshLevel() {
+    _battery.batteryLevel
+        .then((level) {
+          if (!mounted) return;
+          if (_batteryLevel != level) {
+            setState(() {
+              _batteryLevel = level;
+            });
+          }
+        })
+        .catchError((_) {
+          // ignore
+        });
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
+    _stateSubscription?.cancel();
     super.dispose();
   }
 
